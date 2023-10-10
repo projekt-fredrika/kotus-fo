@@ -1,9 +1,9 @@
 # kotus-fo
-Python script to parse wordlist of Finland Swedish dialects published by Institute for the Languages of Finland
+Python script to parse wordlist of Finland Swedish dialects published by Institute for the Languages of Finland and prepare data for Wikidata
 
-På svenska: python script för att behandla svenska ord från "Ordbok över Finlands svenska folkmål" utgiven av "Institutet för de inhemska språken"
+På svenska: python script för att behandla svenska ord från "Ordbok över Finlands svenska folkmål" utgiven av "Institutet för de inhemska språken" för Wikidata
 
-The publication can be found at https://kaino.kotus.fi/fo/
+The publication can be found at https://kaino.kotus.fi/fo/ and is described on Wikipedia at https://sv.wikipedia.org/wiki/Ordbok_över_Finlands_svenska_folkmål
 
 ## Workflow and functions
 1. Creates base data for over 70 000 words in dataframe by parsing XML file of publication. XML-files are available for download at https://www.kotus.fi/aineistot/tietoa_aineistoista/sahkoiset_aineistot_kootusti
