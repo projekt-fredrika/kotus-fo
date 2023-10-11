@@ -9,16 +9,16 @@ import requests
 import json
 import ast 
 
-loadcacheflag = False
 loadlexemesflag = False
 getwikidatalexemeflag = False
+loadcacheflag = False
 usecacheflag = False
 savetopickeflag = False
 # To create cache file and pickle file for faster processing - turn above to True and place downloaded xml-files in directory fo/. 
 # Download zip file from https://www.kotus.fi/aineistot/tietoa_aineistoista/sahkoiset_aineistot_kootusti)
 readpickleflag = True
-savetoexcelflag = True
-countcharsflag = False
+savetoexcelflag = False
+countcharsflag = True
 
 # to run single xml files instead of all in directory, change to True 
 singlexml = False
@@ -34,25 +34,40 @@ chars = {}
 cached_lexemes = {}
 catconvert = {"sub":"substantiv", "verb":"verb", "adj":"adjektiv", "adv":"adverb", "interj":"interjektion","konj":"konjunktion","prep":"preposition","pron":"pronomen","räkn":"räkneord"}
 
+# first function
+def loadwords():
+    print("Reading XML-file")
+    filelist = listxmlfiles(xmlfilepath)
+    df = pd.DataFrame()
+    i = 0
+    for file in filelist:
+        i += 1
+        data =  readxml_dialects(xmlfilepath,file)
+        #df2 =  readxml_basics(filepath,file)
+        #print(f"Read XML-file: {file}, length {df2.shape[0]}")
+        df2 = pd.DataFrame(data)
+        df = pd.concat([df, df2], ignore_index=True)
 
-def loadcache():
-    global cached_lexemes
-    if not os.path.exists(cachefile):
-        with open(cachefile, "w") as file:
-            file.write("{}")
-        print(f"'{cachefile}' was created")
-    with open(cachefile, 'r') as json_file:
-        cached_lexemes = json.load(json_file)
-        print(f"Loaded cache file: {cachefile}")
+    if getwikidatalexemeflag == False:
+        print("lexeme = False. Not fetching data from Wikidata API.\n")
+    else:  
+        print("Collecting lexeme stats")
+        for index, row in df.iterrows():
+            word = row["FO_oneword"]
+            category_fo = row["FO_PartOfSpeech_class"]
+            category_fo_homonum = row["FO_hg"]
+            cache_or_api_or_error,hits,lexeme_id,value,language,category,url = search_lexeme(word, category_fo, category_fo_homonum)
+            df.at[index, "hits"] = hits
+            df.at[index, "lexeme_id"] = lexeme_id
+            df.at[index, "value"] = value
+            df.at[index, "language"] = language
+            df.at[index, "category"] = category
+            df.at[index, "url"] = url
+            print(f"Row {index + 1}/{len(df)}\t{cache_or_api_or_error}\t{word}\t{hits}\t{lexeme_id}\t{value}\t{language}\t{category}\t{url}")
+        print("Done collecting lexeme stats")
 
-def listxmlfiles(directory_path):
-    # Get a list of all files in the directory and filter to only .xml files
-    file_list = os.listdir(directory_path)
-    xml_files = [file for file in file_list if file.endswith(".xml")]
-    if singlexml == True:
-        xml_files = xml_file
-    print(f"Found {len(xml_files)} XML-files")
-    return sorted(xml_files)
+    print(f"Total amount of rows: {len(df)}")
+    return df
 
 def iterchild(element, i):
     i = i+1
@@ -62,6 +77,17 @@ def iterchild(element, i):
     for child in element:
         iterchild(child, i)
 
+# gets XML files to process, called from first function
+def listxmlfiles(directory_path):
+    # Get a list of all files in the directory and filter to only .xml files
+    file_list = os.listdir(directory_path)
+    xml_files = [file for file in file_list if file.endswith(".xml")]
+    if singlexml == True:
+        xml_files = xml_file
+    print(f"Found {len(xml_files)} XML-files")
+    return sorted(xml_files)
+
+# parse XML-files, called from first function
 def readxml_dialects(xmlfilepath,file):
     tree = ET.parse(xmlfilepath+file)
     root = tree.getroot()
@@ -130,61 +156,7 @@ def readxml_dialects(xmlfilepath,file):
         print(row['FO_Headword'], row['FO_oneword'], row['FO_PartOfSpeech_class'])
     return data
 
-def countchars(df):
-    for index, row in df.iterrows():
-        for key, value in row['FO_Variants'].items():
-            if value['Style'] == "fin":
-                addchar(key, row['FO_oneword'])
-                #print(key, value['Style'])
-
-def addchar(word, word2):
-    global chars
-    i = 0
-    while i < len(word):
-        char = word[i]
-        combination = None
-
-        # Check for characters that are double
-        if i + 1 < len(word) and char == word[i + 1]:
-            combination = char * 2
-            i += 1  # Skip next character
-
-        # Check for characters followed by ':'
-        elif i + 1 < len(word) and word[i + 1] == ':':
-            combination = char + ":"
-            i += 1  # Skip next character
-
-        # Check for characters followed by 'ː'
-        elif i + 1 < len(word) and word[i + 1] == 'ː':
-            combination = char + "ː"
-            i += 1  # Skip next character
-
-        # Update the chars dictionary with the combination
-        if combination:
-            chars[combination] = chars.get(combination, {"count":0})
-            chars[combination]["count"] = chars[combination]["count"] + 1
-            chars[combination].setdefault("uttal", word)
-            chars[combination].setdefault("ord", word2)
-        # If there's no combination, treat as individual char
-        else:
-            chars[char] = chars.get(char, {"count":0})
-            chars[char]["count"] = chars[char]["count"] + 1
-            chars[char].setdefault("uttal", word)
-            chars[char].setdefault("ord", word2)
-
-        i += 1
-
-def readpickle(path):
-    pickle_file = path+"dataframe.pkl"
-    loaded_df = pd.read_pickle(pickle_file)
-    print(f"\nLoaded pickle file {pickle_file} with {len(loaded_df)} rows")
-    return loaded_df
-
-def savetopickle(df, outputpath):
-    output_pickle_file = outputpath+"dataframe.pkl"
-    df.to_pickle(output_pickle_file)
-    print(f"saved pickle file {output_pickle_file}")
-
+# search for corresponding lexeme from Wikidata, called from first function
 def search_lexeme(query, category_fo, category_fo_homonum):
     global cached_lexemes
     cache_or_api_or_error = "none"
@@ -230,48 +202,31 @@ def search_lexeme(query, category_fo, category_fo_homonum):
         cache_or_api_or_error = "error"
     return cache_or_api_or_error, None,"","","","",""
 
-def loadlexemes():
-    print("Reading XML-file")
-    filelist = listxmlfiles(xmlfilepath)
-    df = pd.DataFrame()
-    i = 0
-    for file in filelist:
-        i += 1
-        data =  readxml_dialects(xmlfilepath,file)
-        #df2 =  readxml_basics(filepath,file)
-        #print(f"Read XML-file: {file}, length {df2.shape[0]}")
-        df2 = pd.DataFrame(data)
-        df = pd.concat([df, df2], ignore_index=True)
+# load chache used when searching for lexeme in Wikidata, used in function search_lexeme, called from main script
+def loadcache():
+    global cached_lexemes
+    if not os.path.exists(cachefile):
+        with open(cachefile, "w") as file:
+            file.write("{}")
+        print(f"'{cachefile}' was created")
+    with open(cachefile, 'r') as json_file:
+        cached_lexemes = json.load(json_file)
+        print(f"Loaded cache file: {cachefile}")
 
-    if getwikidatalexemeflag == False:
-        print("lexeme = False. Not fetching data from Wikidata API.\n")
-    else:  
-        print("Collecting lexeme stats")
-        for index, row in df.iterrows():
-            word = row["FO_oneword"]
-            category_fo = row["FO_PartOfSpeech_class"]
-            category_fo_homonum = row["FO_hg"]
-            cache_or_api_or_error,hits,lexeme_id,value,language,category,url = search_lexeme(word, category_fo, category_fo_homonum)
-            df.at[index, "hits"] = hits
-            df.at[index, "lexeme_id"] = lexeme_id
-            df.at[index, "value"] = value
-            df.at[index, "language"] = language
-            df.at[index, "category"] = category
-            df.at[index, "url"] = url
-            print(f"Row {index + 1}/{len(df)}\t{cache_or_api_or_error}\t{word}\t{hits}\t{lexeme_id}\t{value}\t{language}\t{category}\t{url}")
-        print("Done collecting lexeme stats")
+# saves dataframe to pickle, called from main script
+def savetopickle(df, outputpath):
+    output_pickle_file = outputpath+"dataframe.pkl"
+    df.to_pickle(output_pickle_file)
+    print(f"saved pickle file {output_pickle_file}")
 
-    print(f"Total amount of rows: {len(df)}")
-    return df
+# loads dataframe from pickle, called from main script
+def readpickle(path):
+    pickle_file = path+"dataframe.pkl"
+    loaded_df = pd.read_pickle(pickle_file)
+    print(f"\nLoaded pickle file {pickle_file} with {len(loaded_df)} rows")
+    return loaded_df
 
-def savechars(outputpath):
-    df = pd.DataFrame(chars).T
-    df = df.sort_values(by='count', ascending=False)
-    #print(df)
-    output_excel_file = outputpath+"output_chars.xlsx"
-    df.to_excel(output_excel_file)
-    print(f"Saved chars to file: {output_excel_file}")
-
+# manipulates and filters dataframe, and outputs as excel file
 def savetoexcel(df, outputpath):
     # Create a Pandas Excel writer object
     output_excel_file = outputpath+"output_data.xlsx"
@@ -331,10 +286,65 @@ def savetoexcel(df, outputpath):
     excel_writer.save()
     print(f"Saved selected dataframes to file: {output_excel_file}")
 
+# main function for counting characters
+def countchars(df):
+    for index, row in df.iterrows():
+        for key, value in row['FO_Variants'].items():
+            if value['Style'] == "fin":
+                addchar(key, row['FO_oneword'])
+                #print(key, value['Style'])
+
+# counts characters in single word
+def addchar(dialectword, actualword):
+    global chars
+    i = 0
+    while i < len(dialectword):
+        char = dialectword[i]
+        combination = None
+
+        # Check for characters that are double
+        if i + 1 < len(dialectword) and char == dialectword[i + 1]:
+            combination = char * 2
+            i += 1  # Skip next character
+
+        # Check for characters followed by ':'
+        elif i + 1 < len(dialectword) and dialectword[i + 1] == ':':
+            combination = char + ":"
+            i += 1  # Skip next character
+
+        # Check for characters followed by 'ː'
+        elif i + 1 < len(dialectword) and dialectword[i + 1] == 'ː':
+            combination = char + "ː"
+            i += 1  # Skip next character
+
+        # Update the chars dictionary with the combination
+        if combination:
+            chars[combination] = chars.get(combination, {"count":0})
+            chars[combination]["count"] = chars[combination]["count"] + 1
+            chars[combination].setdefault("uttal", dialectword)
+            chars[combination].setdefault("ord", actualword)
+        # If there's no combination, treat as individual char
+        else:
+            chars[char] = chars.get(char, {"count":0})
+            chars[char]["count"] = chars[char]["count"] + 1
+            chars[char].setdefault("uttal", dialectword)
+            chars[char].setdefault("ord", actualword)
+
+        i += 1
+
+# saves charcter count to excel file
+def savechars(outputpath):
+    df = pd.DataFrame(chars).T
+    df = df.sort_values(by='count', ascending=False)
+    #print(df)
+    output_excel_file = outputpath+"output_chars.xlsx"
+    df.to_excel(output_excel_file)
+    print(f"Saved chars to file: {output_excel_file}")
+
 if loadcacheflag == True:
     loadcache()
 if loadlexemesflag == True: 
-    df = loadlexemes()
+    df = loadwords()
 if savetopickeflag == True: 
     savetopickle(df, outputpath)
 if readpickleflag == True: 
