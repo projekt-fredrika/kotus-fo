@@ -266,7 +266,7 @@ def loadlexemes():
 
 def savechars(outputpath):
     df = pd.DataFrame(chars).T
-    df = df.sort_values(by='Count', ascending=False)
+    df = df.sort_values(by='count', ascending=False)
     #print(df)
     output_excel_file = outputpath+"output_chars.xlsx"
     df.to_excel(output_excel_file)
