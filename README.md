@@ -6,7 +6,7 @@ På svenska: python script för att behandla svenska ord från "Ordbok över Fin
 The publication can be found at https://kaino.kotus.fi/fo/ and is described on Wikipedia at https://sv.wikipedia.org/wiki/Ordbok_över_Finlands_svenska_folkmål
 
 ## Workflow and functions
-1. Creates base data for over 79 000 words in dataframe by parsing XML file of publication. XML-files are available for download at https://www.kotus.fi/aineistot/tietoa_aineistoista/sahkoiset_aineistot_kootusti. Parses the metadata in XML toa dataframe.
+1. Creates base data for over 79 000 words in dataframe by parsing XML file of publication. XML-files are available for download at https://www.kotus.fi/aineistot/tietoa_aineistoista/sahkoiset_aineistot_kootusti. Parses the metadata in XML to dataframe (Regions, Dialects, Grammer, Gloss, Examples, See Also).
 2. Searches words in Wikidata for corresponding lexemes with the same lemma, language (Swedish) and category (noun, verb, etc) and adds Wikidata L-code to dataframe. Saves/reads results from/to cache.json in case process is interrupted or later runs. 
 3. Saves result as dataframe as a pickle-file, and can reload dataframe from pickle-file to skip previous steps for fast processing. 
 4. Filters and manipulates words and outputs as sheets in excel file output-data.xlsx, e.g.
