@@ -8,6 +8,7 @@ import os
 import requests
 import json
 import ast 
+import re
 
 loadlexemesflag = False
 getwikidatalexemeflag = False
@@ -17,12 +18,14 @@ savetopickeflag = False
 # To create cache file and pickle file for faster processing - turn above to True and place downloaded xml-files in directory fo/. 
 # Download zip file from https://www.kotus.fi/aineistot/tietoa_aineistoista/sahkoiset_aineistot_kootusti)
 readpickleflag = True
-savetoexcelflag = False
-countcharsflag = True
+savetoexcelflag = True
+countcharsflag = False
+bulkconvertflag = False
 
 # to run single xml files instead of all in directory, change to True 
 singlexml = False
 xml_file = ["Band1-01-abb.xml", "Band1-02-all.xml"]
+xml_file = ["Band1-01-abb.xml"]
 
 # import parameters from config.py
 from config import PATH
@@ -33,6 +36,9 @@ cachefile = PATH+"cache.json"
 chars = {}
 cached_lexemes = {}
 catconvert = {"sub":"substantiv", "verb":"verb", "adj":"adjektiv", "adv":"adverb", "interj":"interjektion","konj":"konjunktion","prep":"preposition","pron":"pronomen","räkn":"räkneord"}
+conversiontable = pd.DataFrame()
+conversion_dict = {}
+patterns = {}
 
 # first function
 def loadwords():
@@ -53,29 +59,21 @@ def loadwords():
     else:  
         print("Collecting lexeme stats")
         for index, row in df.iterrows():
-            word = row["FO_oneword"]
-            category_fo = row["FO_PartOfSpeech_class"]
+            word = row["FO_oneword"].strip()
+            category_fo = row["FO_PartOfSpeech_class_first"]
             category_fo_homonum = row["FO_hg"]
             cache_or_api_or_error,hits,lexeme_id,value,language,category,url = search_lexeme(word, category_fo, category_fo_homonum)
-            df.at[index, "hits"] = hits
-            df.at[index, "lexeme_id"] = lexeme_id
-            df.at[index, "value"] = value
-            df.at[index, "language"] = language
-            df.at[index, "category"] = category
-            df.at[index, "url"] = url
+            df.at[index, "WD_hits"] = hits
+            df.at[index, "WD_lexeme_id"] = lexeme_id
+            df.at[index, "WD_value"] = value
+            df.at[index, "WD_language"] = language
+            df.at[index, "WD_category"] = category
+            df.at[index, "WD_url"] = url
             print(f"Row {index + 1}/{len(df)}\t{cache_or_api_or_error}\t{word}\t{hits}\t{lexeme_id}\t{value}\t{language}\t{category}\t{url}")
         print("Done collecting lexeme stats")
 
     print(f"Total amount of rows: {len(df)}")
     return df
-
-def iterchild(element, i):
-    i = i+1
-    text =  "".join(element.itertext()).replace('\n', '').replace('\r', '')
-    if "adjektiv" in text:
-        print(i, element.tag, element.attrib, text)
-    for child in element:
-        iterchild(child, i)
 
 # gets XML files to process, called from first function
 def listxmlfiles(directory_path):
@@ -103,7 +101,7 @@ def readxml_dialects(xmlfilepath,file):
             for key, value in abbr.items():
                 if homographnumber.startswith(key):
                     homographnumber_class = value
-        headword = dictionaryentry.find('./HeadwordCtn/Headword').text
+        headword = dictionaryentry.find('./HeadwordCtn/Headword').text.strip()
         compound = False
         if headword.startswith('-') or headword.endswith('-'):
             oneword = headword
@@ -120,40 +118,65 @@ def readxml_dialects(xmlfilepath,file):
         url_kotus = "https://kaino.kotus.fi/fo/?p=article&fo_id="+id
         #searchform = dictionaryentry.find('./HeadwordCtn/SearchForm').text
         #description = ET.tostring(dictionaryentry, encoding='utf-8', method='text').decode('utf-8')
-        raw_xml = ET.tostring(dictionaryentry, encoding='utf-8').decode('utf-8')
+        raw_xml = ET.tostring(dictionaryentry, encoding='utf-8').decode('utf-8').replace("\n", " ")
         raw_xml_length = len(raw_xml)
         variant_tags = {}
-        partofspeeches_tags = []
+        partofspeeches_tags = {}
+        seealso_tags = []
+        example_tags = []
+        sensegrp_tags = []
         partofspeech_first = ""
-        partofspeech_class = ""
+        partofspeech_class_first = ""
         d = "not set"
         active = "not set"
         print(headword)
         for child in dictionaryentry:
-            if child.tag == "PartOfSpeech":
-                partofspeech_freevalue = child.get("freeValue")
-                partofspeech_text = (child.text)
-                partofspeeches_tags.append([partofspeech_freevalue, partofspeech_text])
-                if partofspeech_first == "":
-                    partofspeech_first = partofspeech_text
-                if partofspeech_class == "":
-                    partofspeech_class = partofspeech_freevalue.split("_")[0]
-                    for key, value in catconvert.items():
-                        if partofspeech_class == key:
-                            partofspeech_class = value
             if child.tag == "Variant":
                 active = "Variant"
-                d = child.text
+                d = child.text.strip()
                 style = child.get('style')
                 variant_tags[d] = {"Style": style, "Regions": []}
-            elif child.tag == "GeographicalUsage" and active != "not set" and d != "not set":
-                geousage = child.text
-                variant_tags[d]["Regions"].append(geousage)
+            if child.tag == "PartOfSpeech":
+                active = "PartOfSpeech"
+                if child.text:
+                    d = child.text.strip()
+                else:
+                    d = "no PatrOfSpeech text"
+                partofspeech_freevalue = child.get("freeValue")
+                partofspeeches_tags[d] = {"freeValue": partofspeech_freevalue, "Regions": []}
+                if partofspeech_first == "":
+                    partofspeech_first = d
+                if partofspeech_class_first == "":
+                    partofspeech_class_first = partofspeech_freevalue.split("_")[0]
+                    for key, value in catconvert.items():
+                        if partofspeech_class_first == key:
+                            partofspeech_class_first = value
+            if child.tag == "SenseGrp":
+                active = "SenseGrp"
+                sensegrp_tags.append(ET.tostring(child, encoding='utf-8', method='text').decode('utf-8'))
+            if child.tag == "Example":
+                active = "Example"
+                example_tags.append(ET.tostring(child, encoding='utf-8', method='text').decode('utf-8'))
+            if child.tag == "SeeAlso":
+                active = "SeeAlso"
+                seealso_tags.append(ET.tostring(child, encoding='utf-8', method='text').decode('utf-8'))
+            if child.tag == "GeographicalUsage" and active != "not set" and d != "not set":
+                if child.text:
+                    geousage = child.text.strip()
+                else:
+                    geousage = "no geousage text"
+                if active == "Variant":
+                    variant_tags[d]["Regions"].append(geousage)
+                if active == "PartOfSpeech":
+                    partofspeeches_tags[d]["Regions"].append(geousage)
+            if child.tail and (len(child.tail)>3 or child.tail.strip().startswith(";")):
+                active = "not set"
             else:
                 continue
-        data.append({"FO_url":url_kotus, "FO_id":id, "FO_Headword":headword, "FO_compound":compound, "FO_hg": homographnumber_class, "FO_oneword":oneword, "FO_hg":homographnumber, "FOPartOfSpeech": partofspeeches_tags,  "FO_Variants": variant_tags, "FO_PartOfSpeech_first": partofspeech_first, "FO_PartOfSpeech_class": partofspeech_class, "FO_raw_xml":raw_xml, "FO_raw_xml_length":raw_xml_length})
-    for row in data:
-        print(row['FO_Headword'], row['FO_oneword'], row['FO_PartOfSpeech_class'])
+        data.append({"FO_url":url_kotus, "FO_id":id, "FO_Headword":headword, "FO_compound":compound, "FO_hg": homographnumber_class, "FO_oneword":oneword, "FO_hg":homographnumber, "FO_PartOfSpeech": partofspeeches_tags,  "FO_Variants": variant_tags, "FO_PartOfSpeech_first": partofspeech_first, "FO_PartOfSpeech_class_first": partofspeech_class_first, "SenseGrp_tags" : sensegrp_tags, "Example_tags": example_tags, "SeeAlso_tags": seealso_tags , "FO_raw_xml":raw_xml, "FO_raw_xml_length":raw_xml_length})
+    #for row in data:
+        #print(row['FO_Headword'], row['FO_oneword'], row['FO_PartOfSpeech_class'])
+        #print(row)
     return data
 
 # search for corresponding lexeme from Wikidata, called from first function
@@ -236,9 +259,10 @@ def savetoexcel(df, outputpath):
     print("\nAnalytics")
 
     print(f"All: Total rows in dataframe: {df.shape[0]}")
-    #print(df)
-    filtered_df = df[['FO_id', 'FO_Headword', 'FO_compound', 'FO_hg', 'FO_oneword', 'lexeme_id']]
-    #filtered_df.to_excel(excel_writer, sheet_name='All', index=False)
+    print(df)
+    filtered_df = df[['FO_id', 'FO_Headword', 'FO_compound', 'FO_hg', 'FO_oneword', 'WD_lexeme_id']]
+    filtered_df.to_excel(excel_writer, sheet_name='All', index=False)
+    #df.to_excel(excel_writer, sheet_name='All', index=False)
 
     filtered_df = df[df['FO_compound'] == False].copy()
     print(f"Non-compound: Simplex words (FO_compound == False): {filtered_df.shape[0]}")
@@ -251,96 +275,210 @@ def savetoexcel(df, outputpath):
     #filtered_df.to_excel(excel_writer, sheet_name='Förled', index=False)
 
     #print("\nMatched to Wikidata lexemes")
-    filtered_df = df[df['lexeme_id'].notnull() & (df['lexeme_id'].astype(str).str.len() > 0)].copy()
+    filtered_df = df[df['WD_lexeme_id'].notnull() & (df['WD_lexeme_id'].astype(str).str.len() > 0)].copy()
     print(f"Lexeme_id: Matched lexemes: {filtered_df.shape[0]}")
     for index, row in filtered_df.iterrows():
-        lexeme_id = filtered_df.at[index, "lexeme_id"]
-        if filtered_df.at[index, "lexeme_id"] != "":
+        lexeme_id = filtered_df.at[index, "WD_lexeme_id"]
+        if filtered_df.at[index, "WD_lexeme_id"] != "":
             filtered_df.at[index, "QS_L"] = lexeme_id
             filtered_df.at[index, "QS_desc_src"] = "P12032"
             filtered_df.at[index, "QS_id"] = '"'+filtered_df.at[index, "FO_id"].replace("FO_", "")+'"'
-    #print(filtered_df)
-    #filtered_df.to_excel(excel_writer, sheet_name='Lexeme_id', index=False)
+    print(filtered_df)
+    filtered_df.to_excel(excel_writer, sheet_name='Lexeme_id', index=False)
 
     print("\nNew lexeme candidates")
-    filtered_df = df.copy()
-    values_to_keep = ['havs','båt','fisk','is']
-    filtered_df['First_Part'] = filtered_df['FO_Headword'].str.split('-').str[0]
-    filtered_df = filtered_df[filtered_df['First_Part'].isin(values_to_keep)]
-    count = filtered_df['First_Part'].value_counts()
-    count = filtered_df['First_Part'].value_counts().reset_index()
-    count.columns = ['First_Part', 'Count']
-    merged_df = filtered_df.merge(count, on='First_Part')
-    merged_df = merged_df.sort_values(by='Count', ascending=False)
-    merged_df = merged_df.head(1000)
-    print(f"Förled Limited: Words starting with {values_to_keep} in total: {merged_df.shape[0]}")    
+    #filtered_df = df.copy()
+    #values_to_keep = ['havs','båt','fisk','is']
+    #filtered_df['First_Part'] = filtered_df['FO_Headword'].str.split('-').str[0]
+    #filtered_df = filtered_df[filtered_df['First_Part'].isin(values_to_keep)]
+    #count = filtered_df['First_Part'].value_counts()
+    #count = filtered_df['First_Part'].value_counts().reset_index()
+    #count.columns = ['First_Part', 'Count']
+    #merged_df = filtered_df.merge(count, on='First_Part')
+    #merged_df = merged_df.sort_values(by='Count', ascending=False)
+    #merged_df = merged_df.head(1000)
+    #print(f"Förled Limited: Words starting with {values_to_keep} in total: {merged_df.shape[0]}")    
     #print(merged_df)
-    merged_df.to_excel(excel_writer, sheet_name='Förled Limited', index=True)
+    #merged_df.to_excel(excel_writer, sheet_name='Förled Limited', index=True)
 
-    filtered_df = df.sort_values(by='FO_raw_xml_length', ascending=False).copy()
-    filtered_df = filtered_df.head(500)
-    print(f"Top by explanation length: {filtered_df.shape[0]}")
+    #filtered_df = df.sort_values(by='FO_raw_xml_length', ascending=False).copy()
+    #filtered_df = filtered_df.head(500)
+    #print(f"Top by explanation length: {filtered_df.shape[0]}")
     #print(filtered_df)
-    filtered_df.to_excel(excel_writer, sheet_name='Top by explanation length', index=False) 
+    #filtered_df.to_excel(excel_writer, sheet_name='Top by explanation length', index=False) 
 
     excel_writer.save()
     print(f"Saved selected dataframes to file: {output_excel_file}")
 
 # main function for counting characters
 def countchars(df):
+    global chars
     for index, row in df.iterrows():
         for key, value in row['FO_Variants'].items():
             if value['Style'] == "fin":
-                addchar(key, row['FO_oneword'])
+                key = key.lower().strip()
+                addchar(key, row['FO_oneword'], value['Regions'], row['FO_hg'])
                 #print(key, value['Style'])
+    for key in chars: 
+        chars[key]["ascii"] = [ord(c) for c in key]
+    print(f"Amount of chars total: {len(chars)}")
 
-# counts characters in single word
-def addchar(dialectword, actualword):
+# counts characters in single word, called from countchars
+def addchar(dialectword, actualword, region, homonum):
     global chars
     i = 0
+    uniqueword = None
     while i < len(dialectword):
         char = dialectword[i]
         combination = None
 
+        # Check for three-character combinations
+        if i + 2 < len(dialectword) and True:
+            three_char_comb = char + dialectword[i + 1] + dialectword[i + 2]
+            if three_char_comb in ["ddj", "ddz", "ttj", "tts"]:
+                combination = three_char_comb
+                i += 2  # Skip next two characters
+
+        # Check for two-character combinations
+        if not combination and i + 1 < len(dialectword) and True:
+            two_char_comb = char + dialectword[i + 1]
+            if two_char_comb in ["dj", "dz", "tj", "ts"]:
+                combination = two_char_comb
+                i += 1  # Skip next character
+
         # Check for characters that are double
-        if i + 1 < len(dialectword) and char == dialectword[i + 1]:
+        if not combination and i + 1 < len(dialectword) and char == dialectword[i + 1] and True:
             combination = char * 2
             i += 1  # Skip next character
 
+        # Check for characters followed by "̣", e.g. ḍ, ḷ, ɺ̣, ṇ, ṣ och ṭ
+        elif i + 1 < len(dialectword) and dialectword[i + 1] == "̣" and True:
+            combination = char + "̣"
+            i += 1  # Skip next character
+
         # Check for characters followed by ':'
-        elif i + 1 < len(dialectword) and dialectword[i + 1] == ':':
+        elif i + 1 < len(dialectword) and dialectword[i + 1] == ':' and True:
             combination = char + ":"
             i += 1  # Skip next character
 
         # Check for characters followed by 'ː'
-        elif i + 1 < len(dialectword) and dialectword[i + 1] == 'ː':
+        elif i + 1 < len(dialectword) and dialectword[i + 1] == 'ː' and True:
             combination = char + "ː"
+            i += 1  # Skip next character
+
+        # Check for characters followed by 'ʼ', muljering
+        elif i + 1 < len(dialectword) and dialectword[i + 1] == 'ʼ' and True:
+            combination = char + "ʼ"
+            i += 1  # Skip next character
+
+        # Check for characters followed by 'ʽ', tonlöshet
+        elif i + 1 < len(dialectword) and char == 'ʽ' and True:
+            combination = "ʽ" + dialectword[i+1]
             i += 1  # Skip next character
 
         # Update the chars dictionary with the combination
         if combination:
             chars[combination] = chars.get(combination, {"count":0})
             chars[combination]["count"] = chars[combination]["count"] + 1
-            chars[combination].setdefault("uttal", dialectword)
-            chars[combination].setdefault("ord", actualword)
+            chars[combination].setdefault("ord_exempel", actualword)
+            chars[combination].setdefault("ord_hg", homonum)
+            chars[combination].setdefault("fin_uttal", dialectword)
+            chars[combination].setdefault("fin_uttal_region", region)
         # If there's no combination, treat as individual char
         else:
             chars[char] = chars.get(char, {"count":0})
             chars[char]["count"] = chars[char]["count"] + 1
-            chars[char].setdefault("uttal", dialectword)
-            chars[char].setdefault("ord", actualword)
+            chars[char].setdefault("ord_exempel", actualword)
+            chars[char].setdefault("ord_hg", homonum)
+            chars[char].setdefault("fin_uttal", dialectword)
+            chars[char].setdefault("fin_uttal_region", region)
 
         i += 1
 
-# saves charcter count to excel file
+
+def loadconversiontable():
+    global conversiontable
+    conversiontable = pd.read_csv('fin2ipa.tsv', delimiter='\t')
+    conversiontable = conversiontable[conversiontable['fin'].notna()]
+    conversiontable = conversiontable.fillna("")
+    conversiontable = conversiontable.sort_values(by='fin', key=lambda x: x.str.len(), ascending=False)
+    global conversion_dict
+    conversion_dict = conversiontable.set_index('fin')['IPA'].to_dict()
+    global patterns 
+    patterns = {fin: re.compile("^" + re.escape(fin)) for fin in conversion_dict.keys()}
+
+# saves character count to excel file
 def savechars(outputpath):
-    df = pd.DataFrame(chars).T
-    df = df.sort_values(by='count', ascending=False)
-    #print(df)
+    df_counted = pd.DataFrame(chars).T
+    df_counted = df_counted.sort_values(by='count', ascending=False)
+    df_fin2ipa = pd.read_csv('fin2ipa.tsv', delimiter='\t')
+    df = df_counted.merge(df_fin2ipa, left_index=True, right_on='fin')
+    df['IPA_uttal_konverterad'] = df['fin_uttal'].apply(fin2ipa)
+    desired_order = ['fin', 'IPA', 'status', 'count', 'ord_exempel', 'ord_hg', 'fin_uttal', 'IPA_uttal_konverterad', 'fin_uttal_region']
+    df = df.reindex(columns=desired_order)
+    print(df)
     output_excel_file = outputpath+"output_chars.xlsx"
     df.to_excel(output_excel_file)
     print(f"Saved chars to file: {output_excel_file}")
 
+#convert fin to IPA
+def fin2ipa(word):
+    #global conversiontable
+    global conversion_dict
+    global patterns
+    #print(word)
+    
+    #ipa_converted = ""
+    # Continuously check the start of the word for any matches
+    #while word:
+    #    match_found = False
+    #    for _, entry in conversiontable.iterrows():
+    #        pattern = "^" + re.escape(entry['fin'])
+    #        match = re.match(pattern, word)
+    #        if match:
+    #            ipa_converted += entry['IPA']
+    #            word = word[len(entry['fin']):]
+    #            match_found = True
+    #            break
+    #    # If no match is found, we append the first character of the word
+    #    # to the result and remove it from the word
+    #    if not match_found:
+    #        ipa_converted += word[0]
+    #        word = word[1:]
+    #return ipa_converted
+
+    ipa_converted = ""
+    while word:
+        match_found = False
+        for fin, pattern in patterns.items():
+            match = pattern.match(word)
+            if match:
+                ipa_converted += conversion_dict[fin]
+                word = word[len(fin):]
+                match_found = True
+                break
+        if not match_found:
+            ipa_converted += word[0]
+            word = word[1:]
+    return ipa_converted
+
+def convertbulk(df):
+    df = df[:100000].copy()
+    uttalrader = []
+    for index, row in df.iterrows():
+        for key, value in row['FO_Variants'].items():
+            if value.get('Style',"") == "fin":
+                #uttalrader.append([row['FO_Headword'],row['FO_hg'],row['FO_PartOfSpeech_class'], key, value.get('Regions',""), fin2ipa(key)])
+                uttalrader.append([row['FO_Headword'],row['FO_hg'],row['FO_PartOfSpeech_class_first'], key, "", value.get('Regions',"")])
+    #uttal_df = pd.DataFrame(uttalrader, columns=['FO_Headword', 'FO_hg', 'FO_PartOfSpeech_class', 'uttal_fin', 'region', 'uttal_IPA'])
+    uttal_df = pd.DataFrame(uttalrader, columns=['FO_Headword', 'FO_hg', 'FO_PartOfSpeech_class_first', 'uttal_fin', 'uttal_IPA', 'region'])
+    uttal_df['uttal_IPA'] = uttal_df['uttal_fin'].apply(fin2ipa)
+    uttal_df['FO_hg'] = uttal_df['FO_hg'].fillna('')
+    print(uttal_df)
+    uttal_df.to_excel(outputpath+"output_uttal.xlsx", index=False, engine='openpyxl')
+    uttal_df.to_csv(outputpath+"output_uttal.csv", index=False)
+
+# actual running of script is here
 if loadcacheflag == True:
     loadcache()
 if loadlexemesflag == True: 
@@ -351,10 +489,10 @@ if readpickleflag == True:
     df = readpickle(outputpath)
 if savetoexcelflag == True: 
     savetoexcel(df, outputpath)
-if countcharsflag == False:
-    print("Not counting chars")
-else: 
+if countcharsflag == True:
     countchars(df)
-    print(f"Amount of chars total: {len(chars)}")
-    #print(chars)
+    loadconversiontable()
     savechars(outputpath)
+if bulkconvertflag == True: 
+    loadconversiontable()
+    convertbulk(df)

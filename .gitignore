@@ -1,4 +1,11 @@
+.DS_Store
+__pycache__/
+backup/
 config.py
 fo/
 cache.json
 dataframe.pkl
+output_chars.xlsx
+output_data.xlsx
+output_uttal.xlsx
+output_uttal.csv
