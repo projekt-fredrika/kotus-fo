@@ -10,7 +10,8 @@ The publication can be found at https://kaino.kotus.fi/fo/ and is described on W
 2. Searches words in Wikidata for corresponding lexemes with the same lemma, language (Swedish) and category (noun, verb, etc) and adds Wikidata L-code to dataframe. Saves/reads results from/to cache.json in case process is interrupted. 
 3. Saves result as dataframe as a pickle-file, and can reload dataframe from pickle-file to skip previous steps for fast processing. 
 4. Filters and manipulates data as needed and outputs as sheets in excel file output-data.xlsx
-5. Lists and counts used characters in dialect words, combines to conversion table (fin to IPA, International Phonetic Alphabet): outputs to output_chars.xlsx. Converts and outputs all dialect words from fin to IPA based on conversion table: output_uttal.xlsx. 
+5. Lists and counts used characters in dialect words, combines to conversion table (fin to IPA, International Phonetic Alphabet): outputs to output_chars.xlsx. 
+6. Converts all dialect words from fin to IPA based on conversion table: outputs to output_uttal.xlsx. 
 
 ## Beneficial outputs
 - Sheet with matched words with needed Wikidata Quickstatement commans to add identifier P12032 (Ordbok över Finlands svenska folkmål ID) to corresponding Wikidata lexemes. 
