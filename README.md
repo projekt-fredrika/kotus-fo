@@ -12,8 +12,5 @@ The publication can be found at https://kaino.kotus.fi/fo/ and is described on W
 4. Filters and manipulates words and outputs as sheets in excel file output-data.xlsx, e.g.
  * Wikidata words: Wikidata Quickstatement commands, to add identifier P12032 (Ordbok över Finlands svenska folkmål ID) to corresponding Wikidata lexemes. 
  * Lexemes mechanically picked for creation as Wikidata lexemes, e.g. by explanation length.
-5. Lists and counts used characters in dialect words, combines to conversion table (fin to IPA, International Phonetic Alphabet) and outputs to output_chars.xlsx. 
-6. Converts all dialect words in fin (over 132 000) to IPA based on conversion table and outputs to output_uttal.xlsx. 
-
-## Beneficial outputs
-
+5. Lists and counts used characters in dialect words (fin, not grov), combines to conversion table (fin to IPA, International Phonetic Alphabet) and outputs to output_chars.xlsx. 
+6. Converts all dialect words in fin (over 133 000) to IPA based on conversion table and outputs to output_uttal.xlsx. 
