@@ -10,17 +10,18 @@ import json
 import ast 
 import re
 
-loadlexemesflag = False
-getwikidatalexemeflag = False
-loadcacheflag = False
-usecacheflag = False
-savetopickeflag = False
+loadlexemesflag = True
+stylefilter = "fin" # with fin, will skip grov-dialect descriptions
+getwikidatalexemeflag = True
+loadcacheflag = True
+usecacheflag = True
+savetopickeflag = True
 # To create cache file and pickle file for faster processing - turn above to True and place downloaded xml-files in directory fo/. 
 # Download zip file from https://www.kotus.fi/aineistot/tietoa_aineistoista/sahkoiset_aineistot_kootusti)
 readpickleflag = True
-savetoexcelflag = True
-countcharsflag = False
-bulkconvertflag = False
+savetoexcelflag = False
+countcharsflag = True
+bulkconvertflag = True
 
 # to run single xml files instead of all in directory, change to True 
 singlexml = False
@@ -35,7 +36,7 @@ cachefile = PATH+"cache.json"
 
 chars = {}
 cached_lexemes = {}
-catconvert = {"sub":"substantiv", "verb":"verb", "adj":"adjektiv", "adv":"adverb", "interj":"interjektion","konj":"konjunktion","prep":"preposition","pron":"pronomen","räkn":"räkneord"}
+catconvert = {"sub":"substantiv", "verb":"verb", "adj":"adjektiv", "adv":"adverb", "interj":"interjektion","konj":"konjunktion","prep":"preposition","pron":"pronomen","räkn":"räkneord","ortn.":"ortnamn"}
 conversiontable = pd.DataFrame()
 conversion_dict = {}
 patterns = {}
@@ -128,26 +129,32 @@ def readxml_dialects(xmlfilepath,file):
         partofspeech_first = ""
         partofspeech_class_first = ""
         d = "not set"
+        style = "not set"
         active = "not set"
         print(headword)
         for child in dictionaryentry:
             if child.tag == "Variant":
-                active = "Variant"
-                d = child.text.strip()
                 style = child.get('style')
-                variant_tags[d] = {"Style": style, "Regions": []}
+                if style == stylefilter: #e.g. only fin
+                    active = "Variant"
+                    d = child.text.strip()
+                    if d not in variant_tags:
+                        variant_tags[d] = {"Style": style, "Regions": []}
             if child.tag == "PartOfSpeech":
                 active = "PartOfSpeech"
                 if child.text:
                     d = child.text.strip()
                 else:
-                    d = "no PatrOfSpeech text"
+                    d = "no PartOfSpeech text"
                 partofspeech_freevalue = child.get("freeValue")
-                partofspeeches_tags[d] = {"freeValue": partofspeech_freevalue, "Regions": []}
+                if d not in partofspeeches_tags:
+                    partofspeeches_tags[d] = {"freeValue": partofspeech_freevalue, "Regions": []}
                 if partofspeech_first == "":
                     partofspeech_first = d
                 if partofspeech_class_first == "":
                     partofspeech_class_first = partofspeech_freevalue.split("_")[0]
+                    if partofspeech_class_first == "":
+                        partofspeech_class_first = d
                     for key, value in catconvert.items():
                         if partofspeech_class_first == key:
                             partofspeech_class_first = value
@@ -166,7 +173,8 @@ def readxml_dialects(xmlfilepath,file):
                 else:
                     geousage = "no geousage text"
                 if active == "Variant":
-                    variant_tags[d]["Regions"].append(geousage)
+                    if style == stylefilter: #e.g. only fin
+                        variant_tags[d]["Regions"].append(geousage)
                 if active == "PartOfSpeech":
                     partofspeeches_tags[d]["Regions"].append(geousage)
             if child.tail and (len(child.tail)>3 or child.tail.strip().startswith(";")):
@@ -376,6 +384,13 @@ def addchar(dialectword, actualword, region, homonum):
             combination = "ʽ" + dialectword[i+1]
             i += 1  # Skip next character
 
+        i += 1
+
+        # Check for double combinations immedietly: lʼlʼ, ḷḷ, nʼnʼ, ṭṭ, ṇṇ, ḍḍ, dʼdʼ, tʼtʼ, ṣṣ
+        if combination and i + 1 < len(dialectword) and combination+dialectword[i]+dialectword[i+1] in ["lʼlʼ", "ḷḷ", "nʼnʼ", "ṭṭ", "ṇṇ", "ḍḍ", "dʼdʼ", "tʼtʼ", "ṣṣ"] and True:
+            combination = combination+dialectword[i]+dialectword[i+1]
+            i += 2 # Skip two characters
+
         # Update the chars dictionary with the combination
         if combination:
             chars[combination] = chars.get(combination, {"count":0})
@@ -392,8 +407,6 @@ def addchar(dialectword, actualword, region, homonum):
             chars[char].setdefault("ord_hg", homonum)
             chars[char].setdefault("fin_uttal", dialectword)
             chars[char].setdefault("fin_uttal_region", region)
-
-        i += 1
 
 
 def loadconversiontable():
@@ -412,7 +425,7 @@ def savechars(outputpath):
     df_counted = pd.DataFrame(chars).T
     df_counted = df_counted.sort_values(by='count', ascending=False)
     df_fin2ipa = pd.read_csv('fin2ipa.tsv', delimiter='\t')
-    df = df_counted.merge(df_fin2ipa, left_index=True, right_on='fin')
+    df = df_counted.merge(df_fin2ipa, left_index=True, right_on='fin', how='left')
     df['IPA_uttal_konverterad'] = df['fin_uttal'].apply(fin2ipa)
     desired_order = ['fin', 'IPA', 'status', 'count', 'ord_exempel', 'ord_hg', 'fin_uttal', 'IPA_uttal_konverterad', 'fin_uttal_region']
     df = df.reindex(columns=desired_order)
