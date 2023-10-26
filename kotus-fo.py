@@ -9,22 +9,24 @@ import requests
 import json
 import ast 
 import re
+from openpyxl import Workbook
+from openpyxl.utils.dataframe import dataframe_to_rows
 
-loadlexemesflag = True
-stylefilter = "fin" # with fin, will skip grov-dialect descriptions
-getwikidatalexemeflag = True
-loadcacheflag = True
-usecacheflag = True
-savetopickeflag = True
+loadlexemesflag = False
+stylefilter = "fin" # will not read grov-dialect descriptions from XML
+getwikidatalexemeflag = False
+loadcacheflag = False
+usecacheflag = False
+savetopickeflag = False
 # To create cache file and pickle file for faster processing - turn above to True and place downloaded xml-files in directory fo/. 
 # Download zip file from https://www.kotus.fi/aineistot/tietoa_aineistoista/sahkoiset_aineistot_kootusti)
 readpickleflag = True
 savetoexcelflag = False
-countcharsflag = True
+countcharsflag = False
 bulkconvertflag = True
 
 # to run single xml files instead of all in directory, change to True 
-singlexml = False
+singlexml = True
 xml_file = ["Band1-01-abb.xml", "Band1-02-all.xml"]
 xml_file = ["Band1-01-abb.xml"]
 
@@ -260,41 +262,41 @@ def readpickle(path):
 # manipulates and filters dataframe, and outputs as excel file
 def savetoexcel(df, outputpath):
     # Create a Pandas Excel writer object
-    output_excel_file = outputpath+"output_data.xlsx"
-    excel_writer = pd.ExcelWriter(output_excel_file, engine='xlsxwriter')
+    #output_excel_file = outputpath+"output_data.xlsx"
+    #excel_writer = pd.ExcelWriter(output_excel_file, engine='xlsxwriter')
 
     # Write each DataFrame to a separate sheet
     print("\nAnalytics")
 
     print(f"All: Total rows in dataframe: {df.shape[0]}")
-    print(df)
-    filtered_df = df[['FO_id', 'FO_Headword', 'FO_compound', 'FO_hg', 'FO_oneword', 'WD_lexeme_id']]
-    filtered_df.to_excel(excel_writer, sheet_name='All', index=False)
+    #print(df)
+    #filtered_df = df[['FO_id', 'FO_Headword', 'FO_compound', 'FO_hg', 'FO_oneword', 'WD_lexeme_id']]
+    #filtered_df.to_excel(excel_writer, sheet_name='All', index=False)
     #df.to_excel(excel_writer, sheet_name='All', index=False)
 
-    filtered_df = df[df['FO_compound'] == False].copy()
-    print(f"Non-compound: Simplex words (FO_compound == False): {filtered_df.shape[0]}")
+    #filtered_df = df[df['FO_compound'] == False].copy()
+    #print(f"Non-compound: Simplex words (FO_compound == False): {filtered_df.shape[0]}")
     #print(filtered_df)
     #filtered_df.to_excel(excel_writer, sheet_name='Non-compound', index=False)
 
-    filtered_df = df[df['FO_Headword'].str.endswith('-')].copy()
-    print(f"Förled: Headword ends with hyphen (-), prefix in FO: {filtered_df.shape[0]}")
+    #filtered_df = df[df['FO_Headword'].str.endswith('-')].copy()
+    #print(f"Förled: Headword ends with hyphen (-), prefix in FO: {filtered_df.shape[0]}")
     #print(filtered_df)
     #filtered_df.to_excel(excel_writer, sheet_name='Förled', index=False)
 
     #print("\nMatched to Wikidata lexemes")
-    filtered_df = df[df['WD_lexeme_id'].notnull() & (df['WD_lexeme_id'].astype(str).str.len() > 0)].copy()
-    print(f"Lexeme_id: Matched lexemes: {filtered_df.shape[0]}")
-    for index, row in filtered_df.iterrows():
-        lexeme_id = filtered_df.at[index, "WD_lexeme_id"]
-        if filtered_df.at[index, "WD_lexeme_id"] != "":
-            filtered_df.at[index, "QS_L"] = lexeme_id
-            filtered_df.at[index, "QS_desc_src"] = "P12032"
-            filtered_df.at[index, "QS_id"] = '"'+filtered_df.at[index, "FO_id"].replace("FO_", "")+'"'
-    print(filtered_df)
-    filtered_df.to_excel(excel_writer, sheet_name='Lexeme_id', index=False)
+    #filtered_df = df[df['WD_lexeme_id'].notnull() & (df['WD_lexeme_id'].astype(str).str.len() > 0)].copy()
+    #print(f"Lexeme_id: Matched lexemes: {filtered_df.shape[0]}")
+    #for index, row in filtered_df.iterrows():
+    #    lexeme_id = filtered_df.at[index, "WD_lexeme_id"]
+    #    if filtered_df.at[index, "WD_lexeme_id"] != "":
+    #        filtered_df.at[index, "QS_L"] = lexeme_id
+    #        filtered_df.at[index, "QS_desc_src"] = "P12032"
+    #        filtered_df.at[index, "QS_id"] = '"'+filtered_df.at[index, "FO_id"].replace("FO_", "")+'"'
+    #print(filtered_df)
+    #filtered_df.to_excel(excel_writer, sheet_name='Lexeme_id', index=False)
 
-    print("\nNew lexeme candidates")
+    #print("\nNew lexeme candidates")
     #filtered_df = df.copy()
     #values_to_keep = ['havs','båt','fisk','is']
     #filtered_df['First_Part'] = filtered_df['FO_Headword'].str.split('-').str[0]
@@ -315,8 +317,12 @@ def savetoexcel(df, outputpath):
     #print(filtered_df)
     #filtered_df.to_excel(excel_writer, sheet_name='Top by explanation length', index=False) 
 
-    excel_writer.save()
-    print(f"Saved selected dataframes to file: {output_excel_file}")
+    #df = df.sort_values(by='FO_Headword', ascending=True)
+    #filtered_df = df[(df['FO_Headword'] >= 'abbal') & (df['FO_Headword'] <= 'alg')]
+    print(filtered_df)
+
+    #excel_writer.save()
+    #print(f"Saved selected dataframes to file: {output_excel_file}")
 
 # main function for counting characters
 def countchars(df):
@@ -475,21 +481,69 @@ def fin2ipa(word):
             word = word[1:]
     return ipa_converted
 
+def populate_atgard(row):
+    if pd.isna(row['Region_förkortning']):
+        return 'Nej, ingen region'
+    elif row['FO_uttal_fin'].startswith('‑'):
+        return 'Nej, börjar med bindesstreck'
+    elif row['FO_uttal_fin'].endswith('‑'):
+        return 'Nej, slutar med bindesstreck'
+    elif row['WD_lexeme_id'].strip():
+        return 'Ja, uppdatera existerande lexem'
+    else:
+        return 'Ja, skapa lexem'
+
 def convertbulk(df):
+    print("starting convertbulk")
     df = df[:100000].copy()
     uttalrader = []
     for index, row in df.iterrows():
         for key, value in row['FO_Variants'].items():
             if value.get('Style',"") == "fin":
                 #uttalrader.append([row['FO_Headword'],row['FO_hg'],row['FO_PartOfSpeech_class'], key, value.get('Regions',""), fin2ipa(key)])
-                uttalrader.append([row['FO_Headword'],row['FO_hg'],row['FO_PartOfSpeech_class_first'], key, "", value.get('Regions',"")])
-    #uttal_df = pd.DataFrame(uttalrader, columns=['FO_Headword', 'FO_hg', 'FO_PartOfSpeech_class', 'uttal_fin', 'region', 'uttal_IPA'])
-    uttal_df = pd.DataFrame(uttalrader, columns=['FO_Headword', 'FO_hg', 'FO_PartOfSpeech_class_first', 'uttal_fin', 'uttal_IPA', 'region'])
-    uttal_df['uttal_IPA'] = uttal_df['uttal_fin'].apply(fin2ipa)
+                uttalrader.append({'FO_id':row['FO_id'],'FO_headword':row['FO_Headword'], 'FO_hg':row['FO_hg'], 'FO_PartOfSpeech_class_first':row['FO_PartOfSpeech_class_first'], 'FO_uttal_fin': key, 'region': value.get('Regions',""), 'WD_lexeme_id':row['WD_lexeme_id']})
+    uttal_df = pd.DataFrame(uttalrader)
+    print("next apply fin2ipa")
+    uttal_df['WD_uttal_IPA'] = uttal_df['FO_uttal_fin'].apply(fin2ipa)
     uttal_df['FO_hg'] = uttal_df['FO_hg'].fillna('')
-    print(uttal_df)
+    print("next save uttal to output_uttal.xlsx")
     uttal_df.to_excel(outputpath+"output_uttal.xlsx", index=False, engine='openpyxl')
-    uttal_df.to_csv(outputpath+"output_uttal.csv", index=False)
+    #uttal_df.to_csv(outputpath+"output_uttal.csv", index=False)
+
+    print("next explode regions")
+    exploded_df = uttal_df.explode('region')
+    print(exploded_df)
+    df_regioner = pd.read_csv('regioner.tsv', sep='\t')
+    merged_df = exploded_df.merge(df_regioner, left_on='region', right_on='Region_förkortning', how='left')
+    merged_df['WD_åtgärd'] = merged_df.apply(populate_atgard, axis=1)
+    desired_order = ['FO_id', 'FO_headword', 'FO_hg', 'FO_PartOfSpeech_class_first', 'FO_uttal_fin', 'Region_förkortning', 'Region_omrade', 'WD_åtgärd', 'WD_lexeme_id', 'WD_uttal_IPA', 'WD_region']
+    merged_df = merged_df.reindex(columns=desired_order)
+
+    print(merged_df)
+    print("saving without formatting xlsx")
+    merged_df.to_excel(outputpath+"output_uttal_regioner_no_formatting.xlsx", index=False, engine='openpyxl')
+
+    # Create a new Excel workbook
+    workbook = Workbook()
+    worksheet = workbook.active
+
+    print("formatting worksheets")
+    # Write the DataFrame to the worksheet
+    for row in dataframe_to_rows(merged_df, index=False, header=True):
+        worksheet.append(row)
+    # Add hyperlinks to the "URL" column
+    for cell in worksheet['A'][1:]:
+        cell.hyperlink = "https://kaino.kotus.fi/fo/?p=article&fo_id="+str(cell.value)
+    for cell in worksheet['I'][1:]:        
+        cell.hyperlink = "https://www.wikidata.org/wiki/Lexeme:"+str(cell.value)
+    for cell in worksheet['K'][1:]:        
+        cell.hyperlink = "https://www.wikidata.org/wiki/"+str(cell.value)
+
+    # Save the workbook to an XLSX file
+    print("saving formated worksheet")
+    workbook.save(outputpath+"output_uttal_regioner_with_formatting.xlsx")
+    print("done")
+
 
 # actual running of script is here
 if loadcacheflag == True:
