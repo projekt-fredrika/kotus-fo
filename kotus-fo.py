@@ -12,21 +12,21 @@ import re
 from openpyxl import Workbook
 from openpyxl.utils.dataframe import dataframe_to_rows
 
-loadlexemesflag = False
+loadlexemesflag = True
 stylefilter = "fin" # will not read grov-dialect descriptions from XML
-getwikidatalexemeflag = False
-loadcacheflag = False
-usecacheflag = False
-savetopickeflag = False
+getwikidatalexemeflag = True
+loadcacheflag = True
+usecacheflag = True
+savetopickeflag = True
 # To create cache file and pickle file for faster processing - turn above to True and place downloaded xml-files in directory fo/. 
 # Download zip file from https://www.kotus.fi/aineistot/tietoa_aineistoista/sahkoiset_aineistot_kootusti)
 readpickleflag = True
 savetoexcelflag = False
-countcharsflag = False
+countcharsflag = True
 bulkconvertflag = True
 
 # to run single xml files instead of all in directory, change to True 
-singlexml = True
+singlexml = False
 xml_file = ["Band1-01-abb.xml", "Band1-02-all.xml"]
 xml_file = ["Band1-01-abb.xml"]
 
@@ -176,9 +176,17 @@ def readxml_dialects(xmlfilepath,file):
                     geousage = "no geousage text"
                 if active == "Variant":
                     if style == stylefilter: #e.g. only fin
-                        variant_tags[d]["Regions"].append(geousage)
+                        if "-" in geousage:
+                            variant_tags[d]["Regions"].append(geousage.split("-")[0])
+                            variant_tags[d]["Regions"].append(geousage.split("-")[1])
+                        else:
+                            variant_tags[d]["Regions"].append(geousage)
                 if active == "PartOfSpeech":
-                    partofspeeches_tags[d]["Regions"].append(geousage)
+                    if "-" in geousage:
+                        partofspeeches_tags[d]["Regions"].append(geousage.split("-")[0])
+                        partofspeeches_tags[d]["Regions"].append(geousage.split("-")[1])
+                    else:
+                        partofspeeches_tags[d]["Regions"].append(geousage)
             if child.tail and (len(child.tail)>3 or child.tail.strip().startswith(";")):
                 active = "not set"
             else:
