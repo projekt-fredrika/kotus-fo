@@ -12,12 +12,12 @@ import re
 from openpyxl import Workbook
 from openpyxl.utils.dataframe import dataframe_to_rows
 
-loadlexemesflag = True
+loadlexemesflag = False
 stylefilter = "fin" # will not read grov-dialect descriptions from XML
-getwikidatalexemeflag = True
-loadcacheflag = True
-usecacheflag = True
-savetopickeflag = True
+getwikidatalexemeflag = False
+loadcacheflag = False
+usecacheflag = False
+savetopickeflag = False
 # To create cache file and pickle file for faster processing - turn above to True and place downloaded xml-files in directory fo/. 
 # Download zip file from https://www.kotus.fi/aineistot/tietoa_aineistoista/sahkoiset_aineistot_kootusti)
 readpickleflag = True
@@ -72,7 +72,7 @@ def loadwords():
             df.at[index, "WD_language"] = language
             df.at[index, "WD_category"] = category
             df.at[index, "WD_url"] = url
-            print(f"Row {index + 1}/{len(df)}\t{cache_or_api_or_error}\t{word}\t{hits}\t{lexeme_id}\t{value}\t{language}\t{category}\t{url}")
+            #print(f"Row {index + 1}/{len(df)}\t{cache_or_api_or_error}\t{word}\t{hits}\t{lexeme_id}\t{value}\t{language}\t{category}\t{url}")
         print("Done collecting lexeme stats")
 
     print(f"Total amount of rows: {len(df)}")
@@ -191,6 +191,7 @@ def readxml_dialects(xmlfilepath,file):
                 active = "not set"
             else:
                 continue
+    
         data.append({"FO_url":url_kotus, "FO_id":id, "FO_Headword":headword, "FO_compound":compound, "FO_hg": homographnumber_class, "FO_oneword":oneword, "FO_hg":homographnumber, "FO_PartOfSpeech": partofspeeches_tags,  "FO_Variants": variant_tags, "FO_PartOfSpeech_first": partofspeech_first, "FO_PartOfSpeech_class_first": partofspeech_class_first, "SenseGrp_tags" : sensegrp_tags, "Example_tags": example_tags, "SeeAlso_tags": seealso_tags , "FO_raw_xml":raw_xml, "FO_raw_xml_length":raw_xml_length})
     #for row in data:
         #print(row['FO_Headword'], row['FO_oneword'], row['FO_PartOfSpeech_class'])
@@ -494,7 +495,7 @@ def populate_atgard(row):
         return 'Nej, ingen region'
     elif row['FO_uttal_fin'].startswith('‑'):
         return 'Nej, börjar med bindesstreck'
-    elif row['FO_uttal_fin'].endswith('‑'):
+    elif row['FO_uttal_fin'].endswith('-'):
         return 'Nej, slutar med bindesstreck'
     elif row['WD_lexeme_id'].strip():
         return 'Ja, uppdatera existerande lexem'
@@ -509,7 +510,7 @@ def convertbulk(df):
         for key, value in row['FO_Variants'].items():
             if value.get('Style',"") == "fin":
                 #uttalrader.append([row['FO_Headword'],row['FO_hg'],row['FO_PartOfSpeech_class'], key, value.get('Regions',""), fin2ipa(key)])
-                uttalrader.append({'FO_id':row['FO_id'],'FO_headword':row['FO_Headword'], 'FO_hg':row['FO_hg'], 'FO_PartOfSpeech_class_first':row['FO_PartOfSpeech_class_first'], 'FO_uttal_fin': key, 'region': value.get('Regions',""), 'WD_lexeme_id':row['WD_lexeme_id']})
+                uttalrader.append({'FO_id':row['FO_id'],'FO_headword':row['FO_Headword'], 'FO_hg':row['FO_hg'], 'FO_PartOfSpeech_class_first':row['FO_PartOfSpeech_class_first'], 'FO_uttal_fin': key, 'region': value.get('Regions',""), 'WD_lexeme_id':row['WD_lexeme_id']}) # "FO_raw_xml":row['FO_raw_xml']
     uttal_df = pd.DataFrame(uttalrader)
     print("next apply fin2ipa")
     uttal_df['WD_uttal_IPA'] = uttal_df['FO_uttal_fin'].apply(fin2ipa)
@@ -524,33 +525,34 @@ def convertbulk(df):
     df_regioner = pd.read_csv('regioner.tsv', sep='\t')
     merged_df = exploded_df.merge(df_regioner, left_on='region', right_on='Region_förkortning', how='left')
     merged_df['WD_åtgärd'] = merged_df.apply(populate_atgard, axis=1)
-    desired_order = ['FO_id', 'FO_headword', 'FO_hg', 'FO_PartOfSpeech_class_first', 'FO_uttal_fin', 'Region_förkortning', 'Region_omrade', 'WD_åtgärd', 'WD_lexeme_id', 'WD_uttal_IPA', 'WD_region']
+    desired_order = ['FO_id', 'FO_headword', 'FO_hg', 'FO_PartOfSpeech_class_first', 'FO_uttal_fin', 'Region_förkortning', 'Region_omrade', 'WD_åtgärd', 'WD_lexeme_id', 'WD_uttal_IPA', 'WD_region', 'FO_raw_xml']
     merged_df = merged_df.reindex(columns=desired_order)
 
     print(merged_df)
     print("saving without formatting xlsx")
-    merged_df.to_excel(outputpath+"output_uttal_regioner_no_formatting.xlsx", index=False, engine='openpyxl')
+    filename_noformat = "output_uttal_regioner_no_formatting.xlsx"
+    merged_df.to_excel(outputpath+filename_noformat, index=False, engine='openpyxl')
 
     # Create a new Excel workbook
-    workbook = Workbook()
-    worksheet = workbook.active
+    #workbook = Workbook()
+    #worksheet = workbook.active
 
-    print("formatting worksheets")
+    #print("formatting worksheets")
     # Write the DataFrame to the worksheet
-    for row in dataframe_to_rows(merged_df, index=False, header=True):
-        worksheet.append(row)
+    #for row in dataframe_to_rows(merged_df, index=False, header=True):
+    #    worksheet.append(row)
     # Add hyperlinks to the "URL" column
-    for cell in worksheet['A'][1:]:
-        cell.hyperlink = "https://kaino.kotus.fi/fo/?p=article&fo_id="+str(cell.value)
-    for cell in worksheet['I'][1:]:        
-        cell.hyperlink = "https://www.wikidata.org/wiki/Lexeme:"+str(cell.value)
-    for cell in worksheet['K'][1:]:        
-        cell.hyperlink = "https://www.wikidata.org/wiki/"+str(cell.value)
+    #for cell in worksheet['A'][1:]:
+    #    cell.hyperlink = "https://kaino.kotus.fi/fo/?p=article&fo_id="+str(cell.value)
+    #for cell in worksheet['I'][1:]:        
+    #    cell.hyperlink = "https://www.wikidata.org/wiki/Lexeme:"+str(cell.value)
+    #for cell in worksheet['K'][1:]:        
+    #    cell.hyperlink = "https://www.wikidata.org/wiki/"+str(cell.value)
 
     # Save the workbook to an XLSX file
-    print("saving formated worksheet")
-    workbook.save(outputpath+"output_uttal_regioner_with_formatting.xlsx")
-    print("done")
+    #print("saving formated worksheet")
+    #workbook.save(outputpath+"output_uttal_regioner_with_formatting.xlsx")
+    #print("done")
 
 
 # actual running of script is here
