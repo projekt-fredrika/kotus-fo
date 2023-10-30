@@ -115,19 +115,5 @@ def createlexemes(df):
     #        claims={"P5137": ["Q19269277"]},
     #    )
 
-def openLexem(L_code):
-    # Open a Lexeme
-    L2 = LexData.Lexeme(repo, L_code)
-    # Access the claims
-    print(L2.claims.keys())
-    # and Forms
-    print(len(L2.forms))
-    F1 = L2.forms[0]
-    print(F1.claims.keys())
-    # and senses
-    print(len(L2.senses))
-    S1 = L2.senses[0]
-    print(S1.claims.keys())
-
 df = read(path+inputfile)
 createlexemes(df)
