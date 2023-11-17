@@ -12,12 +12,16 @@ import re
 from openpyxl import Workbook
 from openpyxl.utils.dataframe import dataframe_to_rows
 
-loadlexemesflag = False
+loadlexemesflag = True
 stylefilter = "fin" # will not read grov-dialect descriptions from XML
-getwikidatalexemeflag = False
-loadcacheflag = False
-usecacheflag = False
-savetopickeflag = False
+cutfilter_2 = ["bs.","pl.","plur.","plt.","bp.","gen.","pr.","pres.","pt.","sup.","dep.","pass.","n.","neutr.","pl.","plur.","best.f.","kompar.","superl."]
+#cutfilter_2 = [s.replace('.', r'\.') for s in cutfilter_2]
+cutfilter_4 = ["bs.","pl.","plur.","plt.","bp.","gen.","dep."]
+#cutfilter_4 = [s.replace('.', r'\.') for s in cutfilter_4]
+getwikidatalexemeflag = True
+loadcacheflag = True
+usecacheflag = True
+savetopickeflag = True
 # To create cache file and pickle file for faster processing - turn above to True and place downloaded xml-files in directory fo/. 
 # Download zip file from https://www.kotus.fi/aineistot/tietoa_aineistoista/sahkoiset_aineistot_kootusti)
 readpickleflag = True
@@ -26,8 +30,9 @@ countcharsflag = True
 bulkconvertflag = True
 
 # to run single xml files instead of all in directory, change to True 
-singlexml = False
+singlexml = True
 xml_file = ["Band1-01-abb.xml", "Band1-02-all.xml"]
+xml_file = ["Band5-48-rys-ryx.xml"]
 xml_file = ["Band1-01-abb.xml"]
 
 # import parameters from config.py
@@ -66,6 +71,7 @@ def loadwords():
             category_fo = row["FO_PartOfSpeech_class_first"]
             category_fo_homonum = row["FO_hg"]
             cache_or_api_or_error,hits,lexeme_id,value,language,category,url = search_lexeme(word, category_fo, category_fo_homonum)
+            #print(word, lexeme_id)
             df.at[index, "WD_hits"] = hits
             df.at[index, "WD_lexeme_id"] = lexeme_id
             df.at[index, "WD_value"] = value
@@ -95,6 +101,7 @@ def readxml_dialects(xmlfilepath,file):
     data = []
     i = 0
     j = 1
+    print("\n\n\n")
     for dictionaryentry in tree.findall('DictionaryEntry'):
         id = dictionaryentry.get('id')
         homographnumber = dictionaryentry.get('homographNumber')
@@ -129,11 +136,14 @@ def readxml_dialects(xmlfilepath,file):
         example_tags = []
         sensegrp_tags = []
         partofspeech_first = ""
+        partofspeech_firstb = True
         partofspeech_class_first = ""
         d = "not set"
         style = "not set"
         active = "not set"
-        print(headword)
+        grundform = "True"
+        explanation = ""
+        previous_child = None
         for child in dictionaryentry:
             if child.tag == "Variant":
                 style = child.get('style')
@@ -141,7 +151,7 @@ def readxml_dialects(xmlfilepath,file):
                     active = "Variant"
                     d = child.text.strip()
                     if d not in variant_tags:
-                        variant_tags[d] = {"Style": style, "Regions": []}
+                        variant_tags[d] = {"Style": style, "Grundform": grundform, "Förklaring": explanation, "Regions": []}
             if child.tag == "PartOfSpeech":
                 active = "PartOfSpeech"
                 if child.text:
@@ -169,6 +179,7 @@ def readxml_dialects(xmlfilepath,file):
             if child.tag == "SeeAlso":
                 active = "SeeAlso"
                 seealso_tags.append(ET.tostring(child, encoding='utf-8', method='text').decode('utf-8'))
+
             if child.tag == "GeographicalUsage" and active != "not set" and d != "not set":
                 if child.text:
                     geousage = child.text.strip()
@@ -187,11 +198,57 @@ def readxml_dialects(xmlfilepath,file):
                         partofspeeches_tags[d]["Regions"].append(geousage.split("-")[1])
                     else:
                         partofspeeches_tags[d]["Regions"].append(geousage)
-            if child.tail and (len(child.tail)>3 or child.tail.strip().startswith(";")):
-                active = "not set"
-            else:
-                continue
-    
+            # Case 1, ;
+            if child.tail and grundform == "True":
+                if re.match(r'^'+";", child.tail.strip()):
+                    grundform = "False 1"
+                    explanation = f"; {child.tail.strip()}"
+            # Case 2, förkortningar innan/efter grammatik, stryk alla
+            if child.tag == "PartOfSpeech" and (grundform == "True" or grundform == "False 3"):
+                found = False
+                if child.tail:
+                    for c in cutfilter_2:
+                        pattern = '(^)'+c
+                        if re.match(pattern, child.tail.strip()):
+                            found = True
+                            grundform = "False 2a"
+                            explanation = f"{c} {child.tail.strip()}"
+                if previous_child.tail:
+                    for c in cutfilter_2:
+                        pattern = '(^|\s)'+c
+                        if c in previous_child.tail.strip():
+                            found = True
+                            grundform = "False 2b"
+                            explanation = f"{c} {previous_child.tail.strip()}"
+                if found == True: 
+                    for v in variant_tags:
+                        variant_tags[v]["Grundform"] = grundform
+                        variant_tags[v]["Förklaring"] = explanation
+            # Case 3, förkortningar i andra fall
+            if child.tag != "PartOfSpeech" and grundform == "True":
+                if child.tail:
+                    for c in cutfilter_2:
+                        if re.match(c, child.tail.strip()):
+                            grundform = "False 3"
+                            explanation = f"{c} {child.tail.strip()}"
+            # Case 4, substantiv förkortningar eller dep i första grammatik/PartOfSpeech
+            if child.tag == "PartOfSpeech" and partofspeech_firstb and grundform == "True":
+                partofspeech_firstb = False
+                if child.text:
+                    found = False
+                    for c in cutfilter_4:
+                        if re.match(c, child.text.strip()):
+                            found = True
+                            grundform = "False 4"
+                            explanation = f"{c} {child.text.strip()}"
+                            for v in variant_tags:
+                                variant_tags[v]["Grundform"] = grundform
+                                variant_tags[v]["Förklaring"] = explanation
+                    # Case 5, annat i första grammatik/PartOfSpeech
+                    if not found:
+                        grundform = "False 5"
+                        explanation = f"annat {child.text.strip()}"
+            previous_child = child
         data.append({"FO_url":url_kotus, "FO_id":id, "FO_Headword":headword, "FO_compound":compound, "FO_hg": homographnumber_class, "FO_oneword":oneword, "FO_hg":homographnumber, "FO_PartOfSpeech": partofspeeches_tags,  "FO_Variants": variant_tags, "FO_PartOfSpeech_first": partofspeech_first, "FO_PartOfSpeech_class_first": partofspeech_class_first, "SenseGrp_tags" : sensegrp_tags, "Example_tags": example_tags, "SeeAlso_tags": seealso_tags , "FO_raw_xml":raw_xml, "FO_raw_xml_length":raw_xml_length})
     #for row in data:
         #print(row['FO_Headword'], row['FO_oneword'], row['FO_PartOfSpeech_class'])
@@ -444,7 +501,7 @@ def savechars(outputpath):
     df['IPA_uttal_konverterad'] = df['fin_uttal'].apply(fin2ipa)
     desired_order = ['fin', 'IPA', 'status', 'count', 'ord_exempel', 'ord_hg', 'fin_uttal', 'IPA_uttal_konverterad', 'fin_uttal_region']
     df = df.reindex(columns=desired_order)
-    print(df)
+    #print(df)
     output_excel_file = outputpath+"output_chars.xlsx"
     df.to_excel(output_excel_file)
     print(f"Saved chars to file: {output_excel_file}")
@@ -510,28 +567,31 @@ def convertbulk(df):
         for key, value in row['FO_Variants'].items():
             if value.get('Style',"") == "fin":
                 #uttalrader.append([row['FO_Headword'],row['FO_hg'],row['FO_PartOfSpeech_class'], key, value.get('Regions',""), fin2ipa(key)])
-                uttalrader.append({'FO_id':row['FO_id'],'FO_headword':row['FO_Headword'], 'FO_hg':row['FO_hg'], 'FO_PartOfSpeech_class_first':row['FO_PartOfSpeech_class_first'], 'FO_uttal_fin': key, 'region': value.get('Regions',""), 'WD_lexeme_id':row['WD_lexeme_id']}) # "FO_raw_xml":row['FO_raw_xml']
+                uttalrader.append({'FO_id':row['FO_id'],'FO_headword':row['FO_Headword'], 'FO_hg':row['FO_hg'], 'FO_PartOfSpeech_class_first':row['FO_PartOfSpeech_class_first'], 'FO_uttal_fin': key, 'region': value.get('Regions',""), 'WD_lexeme_id':row['WD_lexeme_id'], 'FO_uttal_grundform': value.get('Grundform',""), 'FO_uttal_förklaring': value.get('Förklaring',"")}) # "FO_raw_xml":row['FO_raw_xml']
     uttal_df = pd.DataFrame(uttalrader)
     print("next apply fin2ipa")
     uttal_df['WD_uttal_IPA'] = uttal_df['FO_uttal_fin'].apply(fin2ipa)
     uttal_df['FO_hg'] = uttal_df['FO_hg'].fillna('')
-    print("next save uttal to output_uttal.xlsx")
-    uttal_df.to_excel(outputpath+"output_uttal.xlsx", index=False, engine='openpyxl')
+    print("next save uttal to output_uttal_regioner_pa_en_rad.xlsx")
+    uttal_df.to_excel(outputpath+"output_uttal_regioner_pa_en_rad.xlsx", index=False, engine='openpyxl')
     #uttal_df.to_csv(outputpath+"output_uttal.csv", index=False)
 
     print("next explode regions")
     exploded_df = uttal_df.explode('region')
     print(exploded_df)
     df_regioner = pd.read_csv('regioner.tsv', sep='\t')
-    merged_df = exploded_df.merge(df_regioner, left_on='region', right_on='Region_förkortning', how='left')
+    merged_df = exploded_df.merge(df_regioner, left_on='region', right_on='Region_förkortning', how='left') 
     merged_df['WD_åtgärd'] = merged_df.apply(populate_atgard, axis=1)
-    desired_order = ['FO_id', 'FO_headword', 'FO_hg', 'FO_PartOfSpeech_class_first', 'FO_uttal_fin', 'Region_förkortning', 'Region_omrade', 'WD_åtgärd', 'WD_lexeme_id', 'WD_uttal_IPA', 'WD_region', 'FO_raw_xml']
+    desired_order = ['FO_id', 'FO_headword', 'FO_hg', 'FO_PartOfSpeech_class_first', 'FO_uttal_fin', 'FO_uttal_grundform', 'FO_uttal_förklaring', 'Region_förkortning', 'Region_omrade', 'WD_åtgärd', 'WD_lexeme_id', 'WD_uttal_IPA', 'WD_region', 'FO_raw_xml']
     merged_df = merged_df.reindex(columns=desired_order)
 
     print(merged_df)
     print("saving without formatting xlsx")
-    filename_noformat = "output_uttal_regioner_no_formatting.xlsx"
+    filename_noformat = "output_uttal_regioner_exploded_no_formatting.xlsx"
     merged_df.to_excel(outputpath+filename_noformat, index=False, engine='openpyxl')
+
+    #filtered_df = merged_df[merged_df["FO_headword"] == "abborre"][["FO_headword", "FO_uttal_fin", "FO_uttal_grundform"]]
+    #print(filtered_df)
 
     # Create a new Excel workbook
     #workbook = Workbook()
