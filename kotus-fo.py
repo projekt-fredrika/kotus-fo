@@ -15,9 +15,7 @@ from openpyxl.utils.dataframe import dataframe_to_rows
 loadlexemesflag = True
 stylefilter = "fin" # will not read grov-dialect descriptions from XML
 cutfilter_2 = ["bs.","pl.","plur.","plt.","bp.","gen.","pr.","pres.","pt.","sup.","dep.","pass.","n.","neutr.","pl.","plur.","best.f.","kompar.","superl."]
-#cutfilter_2 = [s.replace('.', r'\.') for s in cutfilter_2]
 cutfilter_4 = ["bs.","pl.","plur.","plt.","bp.","gen.","dep."]
-#cutfilter_4 = [s.replace('.', r'\.') for s in cutfilter_4]
 getwikidatalexemeflag = True
 loadcacheflag = True
 usecacheflag = True
@@ -31,7 +29,8 @@ bulkconvertflag = True
 
 # to run single xml files instead of all in directory, change to True 
 singlexml = True
-xml_file = ["Band1-01-abb.xml", "Band1-02-all.xml"]
+xml_file = ["Band1-01-abb.xml", "Band1-02-all.xml", "Band1-03-apos.xml", "Band1-04-av.xml", "Band1-05-baba.xml", "Band1-06-balga.xml", "Band1-07-beck.xml", "Band1-08-bett.xml", "Band1-09-bjoern.xml", "Band1-10-blo.xml", "Band1-11-blae.xml", "Band1-12-bom.xml", "Band1-13-bott.xml", "Band1-14-brin.xml", "Band1-15-brun.xml", "Band1-16-brae.xml", "Band1-17-buk.xml", "Band1-18-bygg.xml", "Band1-19-baeck.xml", "Band1-20-boejel.xml", "Band1-21-c.xml", "Band1-22-den.xml", "Band1-23-dopp.xml", "Band1-24-dris.xml", "Band1-25-dulla.xml", "Band1-26-daake.xml", "Band1-27-doedog.xml", "Band1-28-easy.xml"]
+xml_file = ["Band1-02-all.xml"]
 xml_file = ["Band5-48-rys-ryx.xml"]
 xml_file = ["Band1-01-abb.xml"]
 
@@ -101,7 +100,7 @@ def readxml_dialects(xmlfilepath,file):
     data = []
     i = 0
     j = 1
-    print("\n\n\n")
+    #print("\n\n\n")
     for dictionaryentry in tree.findall('DictionaryEntry'):
         id = dictionaryentry.get('id')
         homographnumber = dictionaryentry.get('homographNumber')
@@ -115,13 +114,16 @@ def readxml_dialects(xmlfilepath,file):
         compound = False
         if headword.startswith('-') or headword.endswith('-'):
             oneword = headword
-            compound = True
+            compound = "bindesord"
+        elif "," in headword:
+            oneword = headword
+            compound = "komma"
         elif "-" in headword:
             oneword = headword.replace("-","")
-            compound = True
+            compound = "compound"
         elif "-" not in headword:
             oneword = headword
-            compound = False
+            compound = "simplex"
         else:
             print("error with hyphen")
             exit()
@@ -145,6 +147,15 @@ def readxml_dialects(xmlfilepath,file):
         explanation = ""
         previous_child = None
         for child in dictionaryentry:
+            # Regel 3/6, förkortningar i andra fall, räcker med förkortning nånstans
+            if child.tag != "PartOfSpeech" and grundform == "True":
+                if child.tail:
+                    for c in cutfilter_2:
+                        pattern = c.replace('.', '\.')
+                        if re.match(pattern, child.tail.replace(',', '').strip()):
+                            grundform = "False 3"
+                            explanation = f"{c} {child.tail.replace(',', '').strip()}"
+            # Uttal
             if child.tag == "Variant":
                 style = child.get('style')
                 if style == stylefilter: #e.g. only fin
@@ -152,6 +163,7 @@ def readxml_dialects(xmlfilepath,file):
                     d = child.text.strip()
                     if d not in variant_tags:
                         variant_tags[d] = {"Style": style, "Grundform": grundform, "Förklaring": explanation, "Regions": []}
+            # Grammatik
             if child.tag == "PartOfSpeech":
                 active = "PartOfSpeech"
                 if child.text:
@@ -179,7 +191,7 @@ def readxml_dialects(xmlfilepath,file):
             if child.tag == "SeeAlso":
                 active = "SeeAlso"
                 seealso_tags.append(ET.tostring(child, encoding='utf-8', method='text').decode('utf-8'))
-
+            # Region
             if child.tag == "GeographicalUsage" and active != "not set" and d != "not set":
                 if child.text:
                     geousage = child.text.strip()
@@ -198,24 +210,24 @@ def readxml_dialects(xmlfilepath,file):
                         partofspeeches_tags[d]["Regions"].append(geousage.split("-")[1])
                     else:
                         partofspeeches_tags[d]["Regions"].append(geousage)
-            # Case 1, ;
+            # Regel 1/6, ; avbryt, och ta inte med följande uttal
             if child.tail and grundform == "True":
                 if re.match(r'^'+";", child.tail.strip()):
                     grundform = "False 1"
                     explanation = f"; {child.tail.strip()}"
-            # Case 2, förkortningar innan/efter grammatik, stryk alla
+            # Regel 2/6, förkortningar innan/efter grammatik, stryk alla, även tidigare
             if child.tag == "PartOfSpeech" and (grundform == "True" or grundform == "False 3"):
                 found = False
                 if child.tail:
                     for c in cutfilter_2:
-                        pattern = '(^)'+c
+                        pattern = '^'+c.replace('.', '\.')
                         if re.match(pattern, child.tail.strip()):
                             found = True
                             grundform = "False 2a"
                             explanation = f"{c} {child.tail.strip()}"
                 if previous_child.tail:
                     for c in cutfilter_2:
-                        pattern = '(^|\s)'+c
+                        pattern = '[\^|\s]'+c.replace('.', '\.')
                         if c in previous_child.tail.strip():
                             found = True
                             grundform = "False 2b"
@@ -224,27 +236,30 @@ def readxml_dialects(xmlfilepath,file):
                     for v in variant_tags:
                         variant_tags[v]["Grundform"] = grundform
                         variant_tags[v]["Förklaring"] = explanation
-            # Case 3, förkortningar i andra fall
-            if child.tag != "PartOfSpeech" and grundform == "True":
-                if child.tail:
-                    for c in cutfilter_2:
-                        if re.match(c, child.tail.strip()):
-                            grundform = "False 3"
-                            explanation = f"{c} {child.tail.strip()}"
-            # Case 4, substantiv förkortningar eller dep i första grammatik/PartOfSpeech
+            # Regel 6/6: två genast på varandra följande grammatik-taggar med bara mellanslag, stryk alla
+            if child.tag == "PartOfSpeech" and previous_child.tag == "PartOfSpeech": 
+                if previous_child.tail == " ":
+                    found = True
+                    grundform = "False 6"
+                    explanation = f"2x PartOfSpeech med mellanslag {previous_child.tail}"
+                    for v in variant_tags:
+                        variant_tags[v]["Grundform"] = grundform
+                        variant_tags[v]["Förklaring"] = explanation
+            # Regel 4/6, substantiv förkortningar eller dep i första grammatik/PartOfSpeech, stryk alla
             if child.tag == "PartOfSpeech" and partofspeech_firstb and grundform == "True":
                 partofspeech_firstb = False
                 if child.text:
                     found = False
                     for c in cutfilter_4:
-                        if re.match(c, child.text.strip()):
+                        pattern = c.replace('.', '\.')
+                        if re.match(pattern, child.text.strip()):
                             found = True
                             grundform = "False 4"
                             explanation = f"{c} {child.text.strip()}"
                             for v in variant_tags:
                                 variant_tags[v]["Grundform"] = grundform
                                 variant_tags[v]["Förklaring"] = explanation
-                    # Case 5, annat i första grammatik/PartOfSpeech
+                    # Regel 5/6, annat i första grammatik/PartOfSpeech
                     if not found:
                         grundform = "False 5"
                         explanation = f"annat {child.text.strip()}"
@@ -550,6 +565,8 @@ def fin2ipa(word):
 def populate_atgard(row):
     if pd.isna(row['Region_förkortning']):
         return 'Nej, ingen region'
+    elif row['FO_uttal_grundform'] != "True":
+        return 'Nej, uttal inte i grundform'
     elif row['FO_uttal_fin'].startswith('‑'):
         return 'Nej, börjar med bindesstreck'
     elif row['FO_uttal_fin'].endswith('-'):
@@ -567,7 +584,7 @@ def convertbulk(df):
         for key, value in row['FO_Variants'].items():
             if value.get('Style',"") == "fin":
                 #uttalrader.append([row['FO_Headword'],row['FO_hg'],row['FO_PartOfSpeech_class'], key, value.get('Regions',""), fin2ipa(key)])
-                uttalrader.append({'FO_id':row['FO_id'],'FO_headword':row['FO_Headword'], 'FO_hg':row['FO_hg'], 'FO_PartOfSpeech_class_first':row['FO_PartOfSpeech_class_first'], 'FO_uttal_fin': key, 'region': value.get('Regions',""), 'WD_lexeme_id':row['WD_lexeme_id'], 'FO_uttal_grundform': value.get('Grundform',""), 'FO_uttal_förklaring': value.get('Förklaring',"")}) # "FO_raw_xml":row['FO_raw_xml']
+                uttalrader.append({'FO_id':row['FO_id'],'FO_headword':row['FO_Headword'], 'FO_compound':row['FO_compound'], 'FO_hg':row['FO_hg'], 'FO_PartOfSpeech_class_first':row['FO_PartOfSpeech_class_first'], 'FO_uttal_fin': key, 'region': value.get('Regions',""), 'WD_lexeme_id':row['WD_lexeme_id'], 'FO_uttal_grundform': value.get('Grundform',""), 'FO_uttal_förklaring': value.get('Förklaring',"")}) # "FO_raw_xml":row['FO_raw_xml']
     uttal_df = pd.DataFrame(uttalrader)
     print("next apply fin2ipa")
     uttal_df['WD_uttal_IPA'] = uttal_df['FO_uttal_fin'].apply(fin2ipa)
@@ -582,7 +599,7 @@ def convertbulk(df):
     df_regioner = pd.read_csv('regioner.tsv', sep='\t')
     merged_df = exploded_df.merge(df_regioner, left_on='region', right_on='Region_förkortning', how='left') 
     merged_df['WD_åtgärd'] = merged_df.apply(populate_atgard, axis=1)
-    desired_order = ['FO_id', 'FO_headword', 'FO_hg', 'FO_PartOfSpeech_class_first', 'FO_uttal_fin', 'FO_uttal_grundform', 'FO_uttal_förklaring', 'Region_förkortning', 'Region_omrade', 'WD_åtgärd', 'WD_lexeme_id', 'WD_uttal_IPA', 'WD_region', 'FO_raw_xml']
+    desired_order = ['FO_id', 'FO_headword', 'FO_compound', 'FO_hg', 'FO_PartOfSpeech_class_first', 'FO_uttal_fin', 'FO_uttal_grundform', 'FO_uttal_förklaring', 'Region_förkortning', 'Region_omrade', 'WD_åtgärd', 'WD_lexeme_id', 'WD_uttal_IPA', 'WD_region']
     merged_df = merged_df.reindex(columns=desired_order)
 
     print(merged_df)
