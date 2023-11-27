@@ -17,8 +17,8 @@ At this point: can save result in dataframe as a pickle-file, and can reload dat
 Creates Wikidata Quickstatement commands, to add identifier P12032 (Ordbok över Finlands svenska folkmål ID) to corresponding existing Wikidata lexemes. 
 
 ### 3. Creates dialect word as IPA
-Analyzes used characters in dialects words, which has been used to create a IPA-conversion table which lists and counts used characters in dialect words (fin, not grov). Outputs to output_chars.xlsx.
+Analyzes used characters in dialects words, which has been used to create a IPA-conversion table which lists and counts used characters in dialect words (fin, not grov). 
 
-Converts all dialect words in fin (over 133 000) to IPA based on conversion table and outputs to output_uttal.xlsx. 
+Converts all dialect words in fin (over 133 000) to IPA (International Phonetic Alphabet) based on conversion table. Wikidata lexemes uses IPA. 
 
 Filters dialect words that are not in "lemma form" according to 6 rules, created based on word list. The challenge has been to mechanically filter out dialect words that are not in the right "basic form", due to the word list being written to be read by humans, not machines. 
