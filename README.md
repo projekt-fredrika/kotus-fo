@@ -6,11 +6,19 @@ På svenska: python script för att behandla svenska ord från "Ordbok över Fin
 The publication can be found at https://kaino.kotus.fi/fo/ and is described on Wikipedia at https://sv.wikipedia.org/wiki/Ordbok_över_Finlands_svenska_folkmål
 
 ## Workflow and functions
-1. Creates base data for over 79 000 words in dataframe by parsing XML file of publication. XML-files are available for download at https://www.kotus.fi/aineistot/tietoa_aineistoista/sahkoiset_aineistot_kootusti. Parses the metadata in XML to dataframe (Regions, Dialects, Grammer, Gloss, Examples, See Also).
-2. Searches words in Wikidata for corresponding lexemes with the same lemma, language (Swedish) and category (noun, verb, etc) and adds Wikidata L-code to dataframe. Saves/reads results from/to cache.json in case process is interrupted or later runs. 
-3. Saves result as dataframe as a pickle-file, and can reload dataframe from pickle-file to skip previous steps for fast processing. 
-4. Filters and manipulates words and outputs as sheets in excel file output-data.xlsx, e.g.
- * Wikidata words: Wikidata Quickstatement commands, to add identifier P12032 (Ordbok över Finlands svenska folkmål ID) to corresponding Wikidata lexemes. 
- * Lexemes mechanically picked for creation as Wikidata lexemes, e.g. by explanation length.
-5. Lists and counts used characters in dialect words (fin, not grov), combines to conversion table (fin to IPA, International Phonetic Alphabet) and outputs to output_chars.xlsx. 
-6. Converts all dialect words in fin (over 133 000) to IPA based on conversion table and outputs to output_uttal.xlsx. 
+### 1. Creates base data
+Collects base data for 79 000 words in dataframe by parsing XML file of publication. XML-files are available for download at https://www.kotus.fi/aineistot/tietoa_aineistoista/sahkoiset_aineistot_kootusti. Parses the metadata in XML to dataframe (Regions, Dialects, Grammer, Gloss, Examples, See Also).
+
+### 2. Matches words to Wikidata lexemes
+Searches words in Wikidata for corresponding lexemes with the same lemma, language (Swedish) and category (noun, verb, etc) and adds Wikidata L-code to dataframe. Saves/reads results from/to cache.json in case process is interrupted or later runs. 
+
+At this point: can save result in dataframe as a pickle-file, and can reload dataframe from pickle-file to skip previous steps for fast processing. 
+
+Creates Wikidata Quickstatement commands, to add identifier P12032 (Ordbok över Finlands svenska folkmål ID) to corresponding existing Wikidata lexemes. 
+
+### 3. Creates dialect word as IPA
+Analyzes used characters in dialects words, which has been used to create a IPA-conversion table which lists and counts used characters in dialect words (fin, not grov). Outputs to output_chars.xlsx.
+
+Converts all dialect words in fin (over 133 000) to IPA based on conversion table and outputs to output_uttal.xlsx. 
+
+Filters dialect words that are not in "lemma form" according to 6 rules, created based on word list. The challenge has been to mechanically filter out dialect words that are not in the right "basic form", due to the word list being written to be read by humans, not machines. 
